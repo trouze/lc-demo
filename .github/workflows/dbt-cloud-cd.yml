@@ -1,119 +1,64 @@
-# dbt Cloud CD: push + matrix (environment × project) → GitHub Environment → dbt Cloud deploy jobs.
-#
-# matrix-prep builds strategy.matrix.include from push branch + changed projects (job-level `if`
-# cannot use `matrix`).
-#
-# Push branch → environment:
-#   dev      → development
-#   staging  → staging
-#   main     → production
-#
-# Variable requirements:
-#   Repository vars: DBT_ACCOUNT_ID, DBT_URL, DBT_API_KEY (secret)
-#   Per GitHub Environment vars: DBT_PROJECT_ID_1, DBT_PROJECT_ID_2, DBT_JOB_CD_1, DBT_JOB_CD_2
-#     (environment-scoped so each env targets its own dbt Cloud project + deploy job)
-
 name: dbt Cloud CD (push)
 
 on:
   push:
-    branches:
-      - dev
-      - staging
-      - main
-
-concurrency:
-  group: dbt-cloud-cd-${{ github.repository }}-${{ github.ref_name }}-${{ github.sha }}
-  cancel-in-progress: false
+    branches: [dev, staging, main]
 
 permissions:
   contents: read
 
 jobs:
-  changes:
-    name: Detect changed dbt projects (push)
+  detect:
+    name: Detect changes
     runs-on: ubuntu-latest
     outputs:
+      environment: ${{ steps.env.outputs.environment }}
       projects: ${{ steps.filter.outputs.changes }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Resolve environment
+        id: env
+        run: |
+          case "${{ github.ref_name }}" in
+            dev)     echo "environment=development" >> "$GITHUB_OUTPUT" ;;
+            staging) echo "environment=staging"     >> "$GITHUB_OUTPUT" ;;
+            main)    echo "environment=production"  >> "$GITHUB_OUTPUT" ;;
+          esac
+
       - uses: dorny/paths-filter@v3
         id: filter
         with:
-          filters: |
-            project_1:
-              - 'first_dbt_project/**'
-            project_2:
-              - 'second_dbt_project/**'
+          filters: .github/path-filters.yml
 
-  # Translate push branch → GitHub Environment name once, so both matrix-prep and
-  # dbt-cloud-cd can reference it without duplicating the mapping.
-  env-gate:
-    name: Resolve target environment
-    needs: changes
-    if: needs.changes.result == 'success' && needs.changes.outputs.projects != '[]'
-    runs-on: ubuntu-latest
-    outputs:
-      environment: ${{ steps.map.outputs.environment }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: map
-        env:
-          BRANCH_REF: ${{ github.ref_name }}
-        run: python scripts/dbt_cloud/map_environment.py
-
-  # Declares `environment:` to unlock per-env vars (DBT_PROJECT_ID_*, DBT_JOB_CD_*).
-  # Resolved IDs are embedded into matrix rows so dbt-cloud-cd needs no conditionals.
-  matrix-prep:
-    name: Build CD matrix (${{ needs.env-gate.outputs.environment }})
-    needs: [changes, env-gate]
-    if: needs.changes.result == 'success' && needs.changes.outputs.projects != '[]' && needs.env-gate.outputs.environment != ''
-    runs-on: ubuntu-latest
-    environment: ${{ needs.env-gate.outputs.environment }}
-    outputs:
-      matrix_json: ${{ steps.build.outputs.matrix_json }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: build
-        env:
-          PROJECTS_JSON: ${{ needs.changes.outputs.projects }}
-          ENVIRONMENT: ${{ needs.env-gate.outputs.environment }}
-          DBT_PROJECT_ID_1: ${{ vars.DBT_PROJECT_ID_1 }}
-          DBT_PROJECT_ID_2: ${{ vars.DBT_PROJECT_ID_2 }}
-          DBT_JOB_1: ${{ vars.DBT_JOB_CD_1 }}
-          DBT_JOB_2: ${{ vars.DBT_JOB_CD_2 }}
-        run: python scripts/dbt_cloud/build_matrix.py
-
-  dbt-cloud-cd:
-    name: dbt Cloud CD — ${{ matrix.environment }} — ${{ matrix.project }}
-    needs: [changes, matrix-prep]
-    if: >
-      needs.changes.result == 'success' &&
-      needs.matrix-prep.result == 'success' &&
-      needs.matrix-prep.outputs.matrix_json != '[]'
-    runs-on: ubuntu-latest
-    environment: ${{ matrix.environment }}
+  cd:
+    name: CD
+    needs: detect
+    if: needs.detect.outputs.environment != '' && needs.detect.outputs.projects != '[]'
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.matrix-prep.outputs.matrix_json) }}
-    env:
-      DBT_URL: ${{ vars.DBT_URL }}
-      DBT_ACCOUNT_ID: ${{ vars.DBT_ACCOUNT_ID }}
-      DBT_PROJECT_ID: ${{ matrix.dbt_project_id }}
-      DBT_PR_JOB_ID: ${{ matrix.dbt_job_id }}
-      DBT_API_KEY: ${{ secrets.DBT_API_KEY }}
-      DBT_JOB_CAUSE: "github-actions-cd:${{ matrix.environment }}:push-${{ github.ref_name }}@${{ github.sha }} (${{ matrix.project }})"
-      DBT_JOB_BRANCH: ${{ github.ref_name }}
-      DBT_RUN_TIMEOUT_SECONDS: "14400"
+        project: ${{ fromJSON(needs.detect.outputs.projects) }}
+    uses: ./.github/workflows/_dbt-cloud-run.yml
+    with:
+      project: ${{ matrix.project }}
+      environment: ${{ needs.detect.outputs.environment }}
+      mode: cd
+      branch: ${{ github.ref_name }}
+      cause_suffix: push-${{ github.ref_name }}@${{ github.sha }}
+    secrets: inherit
+
+  cd-complete:
+    name: dbt Cloud CD
+    needs: [detect, cd]
+    if: always()
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Trigger dbt Cloud deploy job and wait
-        run: python scripts/dbt_cloud/call_dbt_job.py
+      - name: Check results
+        run: |
+          if [[ "${{ needs.cd.result }}" == "failure" ]]; then
+            echo "::error::One or more dbt Cloud CD jobs failed"
+            exit 1
+          fi

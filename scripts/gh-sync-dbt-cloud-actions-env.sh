@@ -31,11 +31,12 @@ Environment (shell):
   DRY_RUN           If 1, print actions only (secrets redacted)
 
 Repository-level (ENVIRONMENT unset):
-  Secret:   DBT_API_KEY
-  Variables: DBT_ACCOUNT_ID, DBT_URL, DBT_PROJECT_ID_1, DBT_PROJECT_ID_2
+  Secret:    DBT_API_KEY
+  Variables: DBT_ACCOUNT_ID, DBT_URL
 
 Per GitHub Environment (ENVIRONMENT=development|staging|production):
-  Variables: DBT_JOB_CI_1, DBT_JOB_CI_2, DBT_JOB_CD_1, DBT_JOB_CD_2
+  Variable: DBT_PROJECTS — JSON with project_id, ci_job_id, cd_job_id per project
+            e.g. {"project_1":{"project_id":"123","ci_job_id":"456","cd_job_id":"789"}}
   Optional secret: DBT_API_KEY (overrides repo secret for jobs using that environment)
 USAGE
 }
@@ -133,10 +134,7 @@ require_gh
 if [[ -n "${GITHUB_ENV_NAME}" ]]; then
   echo "Syncing environment-scoped Actions config to repo: ${REPO} (GitHub Environment: ${GITHUB_ENV_NAME})"
   echo ""
-  set_var_env "${GITHUB_ENV_NAME}" DBT_JOB_CI_1
-  set_var_env "${GITHUB_ENV_NAME}" DBT_JOB_CI_2
-  set_var_env "${GITHUB_ENV_NAME}" DBT_JOB_CD_1
-  set_var_env "${GITHUB_ENV_NAME}" DBT_JOB_CD_2
+  set_var_env "${GITHUB_ENV_NAME}" DBT_PROJECTS
   set_secret_env "${GITHUB_ENV_NAME}" DBT_API_KEY
   echo ""
   echo "Done. Verify: gh variable list -R ${REPO} --env ${GITHUB_ENV_NAME}"
@@ -146,9 +144,7 @@ else
   set_secret DBT_API_KEY
   set_var DBT_ACCOUNT_ID
   set_var DBT_URL
-  set_var DBT_PROJECT_ID_1
-  set_var DBT_PROJECT_ID_2
   echo ""
   echo "Done. Verify: gh secret list -R ${REPO} && gh variable list -R ${REPO}"
-  echo "Then push per-environment job IDs: ENVIRONMENT=development ENV_FILE=.env.development $0 ${REPO}"
+  echo "Then push per-environment config: ENVIRONMENT=development ENV_FILE=.env.development $0 ${REPO}"
 fi
