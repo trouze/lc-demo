@@ -1,0 +1,64 @@
+version: 2
+
+models:
+  - name: int_pitcher_performance_trends
+    description: "Intermediate model analyzing pitcher performance trends and metrics"
+    columns:
+      - name: player_id
+        description: "Unique identifier for each player"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_players')
+                field: player_id
+      - name: game_date
+        description: "Date of the game"
+        tests:
+          - not_null
+      - name: k_per_9
+        description: "Strikeouts per 9 innings"
+      - name: bb_per_9
+        description: "Walks per 9 innings"
+      - name: h_per_9
+        description: "Hits per 9 innings"
+      - name: quality_start
+        description: "Whether the game was a quality start (6+ innings, 3 or fewer earned runs)"
+        tests:
+          - accepted_values:
+              arguments:
+                values: [0, 1]
+      - name: game_score
+        description: "Bill James game score metric"
+      - name: season_era
+        description: "Season-to-date earned run average"
+
+  - name: int_player_value_analysis
+    description: "Intermediate model analyzing player value and performance metrics"
+    columns:
+      - name: player_id
+        description: "Unique identifier for each player"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_players')
+                field: player_id
+      - name: year
+        description: "Year of the analysis"
+        tests:
+          - not_null
+      - name: batting_average
+        description: "Player's batting average"
+      - name: era
+        description: "Pitcher's earned run average"
+      - name: batting_avg_vs_league_pct
+        description: "Percentage difference from league average batting average"
+      - name: era_vs_league_pct
+        description: "Percentage difference from league average ERA"
+      - name: cost_per_primary_stat
+        description: "Cost per primary statistic (wins for pitchers, home runs for batters)"
+      - name: value_score
+        description: "Overall value score based on performance metrics"
+      - name: value_efficiency
+        description: "Value score per million dollars of salary"

@@ -1,0 +1,54 @@
+name: 'dbt_dugout'
+version: '1.0.0'
+config-version: 2
+
+profile: 'sa_snowflake'
+dbt-cloud:
+  defer-env-id: 400397
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  +freshness:
+    build_after:
+      count: 4
+      period: hour
+      updates_on: all
+  dbt_dugout:
+    # Staging models
+    staging:
+      +schema: staging
+      +materialized: view
+
+    # Intermediate models
+    intermediate:
+      +schema: intermediate
+      +materialized: view
+    # Mart models
+    marts:
+      +config:
+        +group: mart
+        +access: public
+      +schema: mart
+      +materialized: table
+
+seeds:
+  dbt_dugout:
+    +enabled: false
+
+vars:
+  # Add any project variables here
+  start_date: '2019-01-01'
+  end_date: '2023-12-31'
+
+tests:
+  +severity: warn
+  +store_failures: true

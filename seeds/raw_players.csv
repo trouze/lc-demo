@@ -1,0 +1,61 @@
+player_id,first_name,last_name,position,birth_date,height,weight,throws,bats
+P001,John,Smith,Pitcher,1990-05-15,75,210,Right,Right
+P002,Mike,Johnson,Pitcher,1988-08-22,74,195,Left,Left
+P003,David,Williams,Pitcher,1992-03-10,76,205,Right,Right
+P004,James,Brown,Catcher,1991-11-30,71,190,Right,Right
+P005,Robert,Davis,First Base,1989-07-14,76,220,Right,Left
+P006,William,Miller,Second Base,1993-04-25,72,185,Right,Right
+P007,Thomas,Wilson,Shortstop,1990-09-18,73,180,Right,Right
+P008,Joseph,Moore,Third Base,1992-12-05,75,195,Right,Right
+P009,Charles,Taylor,Left Field,1991-06-20,74,190,Right,Left
+P010,Daniel,Anderson,Center Field,1993-01-15,73,185,Right,Right
+P011,Michael,Martinez,Pitcher,1991-04-12,76,215,Right,Right
+P012,Christopher,Lee,Pitcher,1989-09-30,75,200,Left,Left
+P013,Anthony,Walker,Pitcher,1992-07-25,77,210,Right,Right
+P014,Matthew,Young,Catcher,1990-12-18,72,195,Right,Right
+P015,Andrew,Allen,First Base,1993-02-28,77,225,Right,Left
+P016,Joshua,King,Second Base,1991-08-15,71,180,Right,Right
+P017,James,Scott,Shortstop,1992-05-20,73,185,Right,Right
+P018,Daniel,Green,Third Base,1990-11-08,74,190,Right,Right
+P019,Paul,Evans,Left Field,1993-03-22,75,195,Right,Left
+P020,Mark,Roberts,Center Field,1991-07-14,74,190,Right,Right
+P021,Donald,Phillips,Pitcher,1989-06-30,76,205,Right,Right
+P022,George,Campbell,Pitcher,1992-01-25,75,195,Left,Left
+P023,Kenneth,Mitchell,Pitcher,1990-10-12,77,210,Right,Right
+P024,Steven,Carter,Catcher,1993-04-05,71,190,Right,Right
+P025,Edward,Wright,First Base,1991-09-18,76,220,Right,Left
+P026,Brian,Lopez,Second Base,1992-12-30,72,185,Right,Right
+P027,Ronald,Clark,Shortstop,1990-03-15,73,180,Right,Right
+P028,Jason,Rodriguez,Third Base,1993-07-22,75,195,Right,Right
+P029,Ryan,Lewis,Left Field,1991-05-28,74,190,Right,Left
+P030,Eric,Hall,Center Field,1992-08-10,73,185,Right,Right
+P031,Stephen,Turner,Pitcher,1990-01-20,76,210,Right,Right
+P032,Andrew,Morris,Pitcher,1993-11-15,75,200,Left,Left
+P033,Joshua,Cook,Pitcher,1991-04-30,77,205,Right,Right
+P034,Justin,Morgan,Catcher,1992-09-25,72,195,Right,Right
+P035,Brandon,Peterson,First Base,1990-07-12,76,225,Right,Left
+P036,Benjamin,Bailey,Second Base,1993-02-18,71,180,Right,Right
+P037,Nicholas,Reed,Shortstop,1991-10-05,73,185,Right,Right
+P038,Samuel,Howard,Third Base,1992-06-28,75,195,Right,Right
+P039,Christian,Watson,Left Field,1990-12-15,74,190,Right,Left
+P040,Jonathan,Brooks,Center Field,1993-03-08,73,185,Right,Right
+P041,Nathan,Ross,Pitcher,1991-08-22,76,210,Right,Right
+P042,Kevin,Perry,Pitcher,1992-05-15,75,200,Left,Left
+P043,Brian,Long,Pitcher,1990-09-30,77,205,Right,Right
+P044,Timothy,Powell,Catcher,1993-01-12,72,195,Right,Right
+P045,Ronald,Russell,First Base,1991-06-25,76,220,Right,Left
+P046,Anthony,Hughes,Second Base,1992-11-08,71,180,Right,Right
+P047,Kevin,Foster,Shortstop,1990-04-20,73,185,Right,Right
+P048,Jason,Simmons,Third Base,1993-08-15,75,195,Right,Right
+P049,Matthew,Bryant,Left Field,1991-03-28,74,190,Right,Left
+P050,Christopher,Alexander,Center Field,1992-07-10,73,185,Right,Right
+P051,Daniel,Griffin,Pitcher,1990-12-05,76,210,Right,Right
+P052,Paul,Wallace,Pitcher,1993-05-20,75,200,Left,Left
+P053,Mark,Dixon,Pitcher,1991-10-15,77,205,Right,Right
+P054,Donald,Harrison,Catcher,1992-02-28,72,195,Right,Right
+P055,George,Wood,First Base,1990-08-12,76,225,Right,Left
+P056,Kenneth,Marshall,Second Base,1993-01-25,71,180,Right,Right
+P057,Steven,Collins,Shortstop,1991-07-08,73,185,Right,Right
+P058,Edward,Bennett,Third Base,1992-12-15,75,195,Right,Right
+P059,Brian,Woods,Left Field,1990-05-30,74,190,Right,Left
+P060,Ronald,Henry,Center Field,1993-09-22,73,185,Right,Right 

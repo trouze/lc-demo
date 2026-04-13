@@ -1,0 +1,127 @@
+# Saved queries for the dbt Dugout semantic layer demo.
+#
+# Dimension reference format (latest spec):
+#   Dimension('entity_name__dimension_name')
+#   TimeDimension('entity_name__dimension_name', 'granularity')
+#
+# Entity → model mapping:
+#   player_salary   → fct_player_salaries  (primary)
+#   player_season   → player_performance_analysis (primary)
+#   player          → dim_roster (primary; foreign key in both fact models)
+
+saved_queries:
+  # -----------------------------------------------------------------------
+  # Payroll by position and season
+  # "Where is our salary budget going, and how has it shifted over time?"
+  # -----------------------------------------------------------------------
+  - name: salary_by_position_and_season
+    label: "Salary by Position & Season"
+    description: >
+      Total and average salary broken down by position and season.
+      Shows payroll allocation across positions over time.
+    query_params:
+      metrics:
+        - total_salary_millions
+        - average_salary_millions
+        - contract_count
+      group_by:
+        - Dimension('player_salary__position')
+        - TimeDimension('player_salary__season_date', 'year')
+    exports:
+      - name: salary_by_position_and_season
+        config:
+          export_as: table
+          schema: mart
+
+  # -----------------------------------------------------------------------
+  # League-level payroll comparison
+  # "How does AL vs NL spend compare season over season?"
+  # -----------------------------------------------------------------------
+  - name: salary_by_league_and_season
+    label: "Salary by League & Season"
+    description: >
+      Total salary and contract count broken down by league and year.
+    query_params:
+      metrics:
+        - total_salary_millions
+        - average_salary_millions
+        - contract_count
+      group_by:
+        - Dimension('player_salary__league')
+        - TimeDimension('player_salary__season_date', 'year')
+    exports:
+      - name: salary_by_league_and_season
+        config:
+          export_as: table
+          schema: mart
+
+  # -----------------------------------------------------------------------
+  # Pitcher performance by season
+  # "How is our rotation performing year over year?"
+  # -----------------------------------------------------------------------
+  - name: pitcher_performance_by_season
+    label: "Pitcher Performance by Season"
+    description: >
+      Aggregate pitcher wins, saves, strikeouts, ERA, and win/loss ratio
+      by season. Useful for spotting rotation quality trends.
+    query_params:
+      metrics:
+        - total_wins
+        - total_saves
+        - total_strikeouts_pitched
+        - average_era
+        - win_loss_ratio
+      group_by:
+        - TimeDimension('player_season__season_date', 'year')
+    exports:
+      - name: pitcher_performance_by_season
+        config:
+          export_as: table
+          schema: mart
+
+  # -----------------------------------------------------------------------
+  # Home run leaders by season
+  # "Who are our best power hitters, and what does each HR cost us?"
+  # -----------------------------------------------------------------------
+  - name: home_run_leaders_by_season
+    label: "Home Run Leaders by Season"
+    description: >
+      Home run totals, RBI, and salary-per-HR per player per season.
+      Surfaces the most cost-efficient power hitters.
+    query_params:
+      metrics:
+        - total_home_runs
+        - total_rbi
+        - salary_per_home_run
+      group_by:
+        - Dimension('player__full_name')
+        - TimeDimension('player_season__season_date', 'year')
+    exports:
+      - name: home_run_leaders_by_season
+        config:
+          export_as: table
+          schema: mart
+
+  # -----------------------------------------------------------------------
+  # Pitcher cost efficiency
+  # "Which pitchers give us the best wins per dollar?"
+  # -----------------------------------------------------------------------
+  - name: pitcher_cost_efficiency
+    label: "Pitcher Cost Efficiency"
+    description: >
+      Wins, ERA, total salary, and salary-per-win per pitcher per season.
+      Lower salary_per_win = better cost efficiency.
+    query_params:
+      metrics:
+        - total_wins
+        - average_era
+        - total_salary_millions
+        - salary_per_win
+      group_by:
+        - Dimension('player__full_name')
+        - TimeDimension('player_season__season_date', 'year')
+    exports:
+      - name: pitcher_cost_efficiency
+        config:
+          export_as: table
+          schema: mart

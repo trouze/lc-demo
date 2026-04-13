@@ -1,0 +1,45 @@
+# Top-level metrics file — cross-model metrics only.
+#
+# In the latest spec (dbt Fusion / Core 1.12+):
+#   - Simple metrics live on each model in schema.yml under `metrics:`
+#   - Ratio/derived/cumulative metrics that cross model boundaries go here
+#
+# Simple metrics defined in schema.yml:
+#   fct_player_salaries    → total_salary, average_salary, max_salary,
+#                            total_salary_millions, average_salary_millions,
+#                            contract_count, cumulative_salary
+#   player_performance_analysis → total_home_runs, total_hits, total_runs,
+#                            total_rbi, total_stolen_bases, average_batting_average,
+#                            total_wins, total_losses, total_saves,
+#                            total_innings_pitched, total_strikeouts_pitched,
+#                            average_era, win_loss_ratio, cumulative_home_runs
+
+metrics:
+  # -----------------------------------------------------------------------
+  # Cross-model ratio metrics
+  # Numerator from fct_player_salaries; denominator from player_performance_analysis
+  # -----------------------------------------------------------------------
+  - name: salary_per_home_run
+    label: "Salary per HR"
+    description: >
+      Salary dollars spent per home run hit.
+      Lower = more cost-efficient power production.
+    type: ratio
+    numerator: total_salary
+    denominator: total_home_runs
+
+  - name: salary_per_win
+    label: "Salary per Win"
+    description: >
+      Salary dollars spent per pitcher win.
+      Lower = more cost-efficient pitching.
+    type: ratio
+    numerator: total_salary
+    denominator: total_wins
+
+  - name: salary_per_hit
+    label: "Salary per Hit"
+    description: "Salary dollars spent per hit"
+    type: ratio
+    numerator: total_salary
+    denominator: total_hits

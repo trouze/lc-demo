@@ -1,0 +1,447 @@
+version: 2
+
+models:
+  # -----------------------------------------------------------------------
+  # time_spine_yearly
+  # Required by MetricFlow for cumulative metrics and time-based joins.
+  # -----------------------------------------------------------------------
+  - name: time_spine_yearly
+    config:
+      freshness: null
+    description: "Time spine with one row per year, used by MetricFlow for time-based aggregations."
+    time_spine:
+      standard_granularity_column: date_year
+    columns:
+      - name: date_year
+        description: "The base date column for yearly granularity (Jan 1 of each year)"
+        granularity: year
+
+  # -----------------------------------------------------------------------
+  # dim_roster
+  # Purely dimensional — no metrics, no time dimension.
+  # Provides player attributes that can be joined via the `player` entity.
+  # -----------------------------------------------------------------------
+  - name: dim_roster
+    config:
+      group: mart
+      access: public
+      freshness:
+        build_after:
+          count: 12
+          period: hour
+          updates_on: all
+    description: "Dimension table containing player roster information"
+    semantic_model:
+      enabled: true
+    columns:
+      - name: player_id
+        description: "Unique identifier for each player"
+        tests:
+          - unique
+          - not_null
+        entity:
+          type: primary
+          name: player
+      - name: full_name
+        description: "Player's full name"
+        tests:
+          - not_null
+        dimension:
+          type: categorical
+      - name: position
+        description: "Player's primary position"
+        tests:
+          - not_null
+        dimension:
+          type: categorical
+      - name: position_abbreviation
+        description: "Abbreviated position code (e.g. P, C, 1B)"
+        dimension:
+          type: categorical
+      - name: team_name
+        description: "Team the player belongs to"
+        dimension:
+          type: categorical
+      - name: league
+        description: "League (American or National)"
+        dimension:
+          type: categorical
+      - name: division
+        description: "Division within the league"
+        dimension:
+          type: categorical
+      - name: is_pitcher
+        description: "True if the player is a pitcher"
+        tests:
+          - accepted_values:
+              arguments:
+                values: [true, false]
+        dimension:
+          type: categorical
+      - name: age
+        description: "Player's current age"
+      - name: birth_date
+        description: "Player's date of birth"
+      - name: height
+        description: "Player's height"
+      - name: weight
+        description: "Player's weight"
+      - name: throws
+        description: "Throwing hand (L/R)"
+      - name: bats
+        description: "Batting hand (L/R/S)"
+      - name: team_city
+        description: "City the team plays in"
+      - name: team_state
+        description: "State the team plays in"
+
+  # -----------------------------------------------------------------------
+  # fct_player_salaries
+  # Grain: one row per player per season.
+  # Primary entity: player_salary (derived from player_id + year).
+  # Foreign entity: player — joins to dim_roster for biographical dimensions.
+  # -----------------------------------------------------------------------
+  - name: fct_player_salaries
+    config:
+      group: mart
+      access: public
+    description: "Fact table containing player salary information by season"
+    semantic_model:
+      enabled: true
+    agg_time_dimension: season_date
+    columns:
+      - name: player_id
+        description: "Unique identifier for each player"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_roster')
+                field: player_id
+        entity:
+          type: foreign
+          name: player
+      - name: season_date
+        description: "First day of the season year — the MetricFlow time dimension"
+        granularity: year
+        dimension:
+          type: time
+      - name: year
+        description: "Season year (integer)"
+        tests:
+          - not_null
+      - name: full_name
+        description: "Player's full name"
+      - name: salary
+        description: "Player's salary in dollars"
+        tests:
+          - not_null
+      - name: salary_millions
+        description: "Player's salary in millions of dollars"
+        tests:
+          - not_null
+      - name: team_name
+        description: "Team name for this contract year"
+        dimension:
+          type: categorical
+      - name: league
+        description: "League (American or National)"
+        dimension:
+          type: categorical
+      - name: division
+        description: "Division"
+        dimension:
+          type: categorical
+      - name: position
+        description: "Player's primary position"
+        dimension:
+          type: categorical
+      - name: is_pitcher
+        description: "True if the player is a pitcher"
+        tests:
+          - accepted_values:
+              arguments:
+                values: [true, false]
+        dimension:
+          type: categorical
+    derived_semantics:
+      entities:
+        - name: player_salary
+          type: primary
+          expr: "player_id || '_' || year::varchar"
+    metrics:
+      - name: total_salary
+        type: simple
+        label: "Total Salary"
+        description: "Sum of player salaries in dollars"
+        agg: sum
+        expr: salary
+        fill_nulls_with: 0
+      - name: average_salary
+        type: simple
+        label: "Average Salary"
+        description: "Average player salary in dollars"
+        agg: average
+        expr: salary
+      - name: max_salary
+        type: simple
+        label: "Max Salary"
+        description: "Highest individual player salary in dollars"
+        agg: max
+        expr: salary
+      - name: total_salary_millions
+        type: simple
+        label: "Total Salary ($M)"
+        description: "Sum of player salaries in millions"
+        agg: sum
+        expr: salary_millions
+        fill_nulls_with: 0
+      - name: average_salary_millions
+        type: simple
+        label: "Average Salary ($M)"
+        description: "Average player salary in millions"
+        agg: average
+        expr: salary_millions
+      - name: contract_count
+        type: simple
+        label: "# Contracts"
+        description: "Number of player-season salary records"
+        agg: count
+        expr: 1
+        fill_nulls_with: 0
+      - name: cumulative_salary
+        type: cumulative
+        label: "Cumulative Salary"
+        description: "Running total of salary expenditure from start of data"
+        input_metric: total_salary
+
+  # -----------------------------------------------------------------------
+  # player_performance_analysis
+  # Grain: one row per player per season.
+  # Primary entity: player_season (derived from player_id + year).
+  # Foreign entity: player — joins to dim_roster for biographical dimensions.
+  # -----------------------------------------------------------------------
+  - name: player_performance_analysis
+    config:
+      group: mart
+      access: public
+    description: "Season-level player performance statistics for batters and pitchers"
+    semantic_model:
+      enabled: true
+    agg_time_dimension: season_date
+    columns:
+      - name: player_id
+        description: "Unique identifier for each player"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_roster')
+                field: player_id
+        entity:
+          type: foreign
+          name: player
+      - name: season_date
+        description: "First day of the season year — the MetricFlow time dimension"
+        granularity: year
+        dimension:
+          type: time
+      - name: year
+        description: "Season year (integer)"
+        tests:
+          - not_null
+      - name: full_name
+        description: "Player's full name"
+        dimension:
+          type: categorical
+      - name: position
+        description: "Player's primary position"
+        dimension:
+          type: categorical
+      - name: total_at_bats
+        description: "Total at bats for the season"
+      - name: total_hits
+        description: "Total hits for the season"
+      - name: total_runs
+        description: "Total runs scored for the season"
+      - name: total_home_runs
+        description: "Total home runs for the season"
+      - name: total_rbi
+        description: "Total runs batted in for the season"
+      - name: total_stolen_bases
+        description: "Total stolen bases for the season"
+      - name: total_walks
+        description: "Total walks for the season"
+      - name: total_strikeouts
+        description: "Total strikeouts (batting) for the season"
+      - name: total_innings_pitched
+        description: "Total innings pitched for the season"
+      - name: total_earned_runs
+        description: "Total earned runs allowed for the season"
+      - name: total_hits_allowed
+        description: "Total hits allowed for the season"
+      - name: total_walks_allowed
+        description: "Total walks allowed for the season"
+      - name: total_strikeouts_pitched
+        description: "Total strikeouts recorded as a pitcher for the season"
+      - name: total_wins
+        description: "Total pitcher wins for the season"
+      - name: total_losses
+        description: "Total pitcher losses for the season"
+      - name: total_saves
+        description: "Total pitcher saves for the season"
+      - name: season_batting_average
+        description: "Player's season batting average"
+      - name: season_era
+        description: "Pitcher's season earned run average"
+      - name: salary
+        description: "Player salary for the season"
+      - name: salary_millions
+        description: "Player salary in millions for the season"
+      - name: cost_per_hit
+        description: "Salary cost per hit for batters"
+      - name: cost_per_home_run
+        description: "Salary cost per home run for batters"
+      - name: cost_per_win
+        description: "Salary cost per win for pitchers"
+    derived_semantics:
+      entities:
+        - name: player_season
+          type: primary
+          expr: "player_id || '_' || year::varchar"
+    metrics:
+      # Batting metrics
+      - name: total_home_runs
+        type: simple
+        label: "Home Runs"
+        description: "Total home runs hit"
+        agg: sum
+        expr: total_home_runs
+        fill_nulls_with: 0
+      - name: total_hits
+        type: simple
+        label: "Hits"
+        description: "Total hits"
+        agg: sum
+        expr: total_hits
+        fill_nulls_with: 0
+      - name: total_runs
+        type: simple
+        label: "Runs"
+        description: "Total runs scored"
+        agg: sum
+        expr: total_runs
+        fill_nulls_with: 0
+      - name: total_rbi
+        type: simple
+        label: "RBI"
+        description: "Total runs batted in"
+        agg: sum
+        expr: total_rbi
+        fill_nulls_with: 0
+      - name: total_stolen_bases
+        type: simple
+        label: "Stolen Bases"
+        description: "Total stolen bases"
+        agg: sum
+        expr: total_stolen_bases
+        fill_nulls_with: 0
+      - name: average_batting_average
+        type: simple
+        label: "Batting Average"
+        description: "Average batting average across player-seasons"
+        agg: average
+        expr: season_batting_average
+      # Pitching metrics
+      - name: total_wins
+        type: simple
+        label: "Wins"
+        description: "Total pitcher wins"
+        agg: sum
+        expr: total_wins
+        fill_nulls_with: 0
+      - name: total_losses
+        type: simple
+        label: "Losses"
+        description: "Total pitcher losses"
+        agg: sum
+        expr: total_losses
+        fill_nulls_with: 0
+      - name: total_saves
+        type: simple
+        label: "Saves"
+        description: "Total pitcher saves"
+        agg: sum
+        expr: total_saves
+        fill_nulls_with: 0
+      - name: total_innings_pitched
+        type: simple
+        label: "Innings Pitched"
+        description: "Total innings pitched"
+        agg: sum
+        expr: total_innings_pitched
+        fill_nulls_with: 0
+      - name: total_strikeouts_pitched
+        type: simple
+        label: "Pitcher Strikeouts"
+        description: "Total strikeouts recorded by pitchers"
+        agg: sum
+        expr: total_strikeouts_pitched
+        fill_nulls_with: 0
+      - name: average_era
+        type: simple
+        label: "ERA"
+        description: "Average earned run average (lower is better)"
+        agg: average
+        expr: season_era
+      # Same-model ratio metric
+      - name: win_loss_ratio
+        type: ratio
+        label: "Win/Loss Ratio"
+        description: "Ratio of pitcher wins to losses — above 1.0 is a winning record"
+        numerator: total_wins
+        denominator: total_losses
+      # Cumulative metric
+      - name: cumulative_home_runs
+        type: cumulative
+        label: "Cumulative Home Runs"
+        description: "Running total of home runs from start of data"
+        input_metric: total_home_runs
+
+  # -----------------------------------------------------------------------
+  # pitcher_salary_analysis
+  # Pre-aggregated rollup — no semantic model applied per best practices
+  # (avoid attaching semantic models to pre-computed rollups).
+  # -----------------------------------------------------------------------
+  - name: pitcher_salary_analysis
+    config:
+      group: mart
+      access: public
+    description: "Pre-aggregated analysis of pitcher salaries — for reporting use only"
+    columns:
+      - name: player_id
+        description: "Unique identifier for each player"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_roster')
+                field: player_id
+      - name: year
+        description: "Year of the analysis"
+        tests:
+          - not_null
+      - name: salary
+        description: "Player's salary in dollars"
+        tests:
+          - not_null
+      - name: total_pitchers
+        description: "Total number of pitchers in the year"
+      - name: team_avg_salary_millions
+        description: "Average salary in millions for pitchers in the year"
+
+groups:
+  - name: mart
+    owner:
+      name: dbt ProServ Team
+      email: tyler.rouze@dbtlabs.com

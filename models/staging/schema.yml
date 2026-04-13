@@ -1,0 +1,115 @@
+version: 2
+
+sources:
+  - name: dugout
+    database: raw
+    schema: trouze
+    config:
+      freshness:
+        warn_after: {count: 24, period: hour}
+        error_after: {count: 48, period: hour}
+    tables:
+      - name: raw_game_stats
+      - name: raw_players
+      - name: raw_salaries
+      - name: raw_teams
+
+models:
+  - name: stg_players
+    description: "Staged player data with basic transformations and derived fields"
+    columns:
+      - name: player_id
+        description: "Unique identifier for each player"
+        tests:
+          - unique
+          - not_null
+      - name: full_name
+        description: "Player's full name (first_name + last_name)"
+        tests:
+          - not_null
+      - name: position
+        description: "Player's primary position"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['Pitcher', 'Catcher', 'First Base', 'Second Base', 'Third Base', 'Shortstop', 'Left Field', 'Center Field', 'Right Field']
+      - name: position_abbreviation
+        description: "Abbreviated position code"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF']
+
+  - name: stg_salaries
+    description: "Staged salary data with basic transformations"
+    columns:
+      - name: player_id
+        description: "Unique identifier for each player"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_players')
+                field: player_id
+      - name: year
+        description: "Year of the salary"
+        tests:
+          - not_null
+      - name: salary
+        description: "Player's salary in dollars"
+        tests:
+          - not_null
+      - name: salary_millions
+        description: "Player's salary in millions of dollars"
+        tests:
+          - not_null
+
+  - name: stg_teams
+    description: "Staged team data with basic transformations"
+    columns:
+      - name: team_id
+        description: "Unique identifier for each team"
+        tests:
+          - unique
+          - not_null
+      - name: team_name
+        description: "Name of the team"
+        tests:
+          - not_null
+      - name: league
+        description: "League the team belongs to"
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['National', 'American']
+      - name: division
+        description: "Division the team belongs to"
+        tests:
+          - not_null
+
+  - name: stg_game_stats
+    description: "Staged game statistics with derived metrics"
+    columns:
+      - name: game_id
+        description: "Unique identifier for each game"
+        tests:
+          - not_null
+      - name: player_id
+        description: "Unique identifier for each player"
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_players')
+                field: player_id
+      - name: game_date
+        description: "Date of the game"
+        tests:
+          - not_null
+      - name: batting_average
+        description: "Player's batting average for the game"
+      - name: era
+        description: "Pitcher's earned run average for the game"

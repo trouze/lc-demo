@@ -1,0 +1,8 @@
+target
+fs_internal_packages
+dbt_packages
+logs
+dbt_internal_packages
+dbt_internal_packages/
+.user.yml
+.env

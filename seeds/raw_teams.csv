@@ -1,0 +1,51 @@
+team_id,team_name,city,state,league,division
+TEAM1,Thunderbolts,Springfield,IL,National,Central
+TEAM2,Wildcats,Madison,WI,National,Central
+TEAM3,Eagles,Des Moines,IA,American,West
+TEAM4,Lions,Omaha,NE,American,West
+TEAM5,Sharks,St. Louis,MO,National,East
+TEAM6,River Hawks,Dubuque,IA,American,East
+TEAM7,Storm Chasers,Lincoln,NE,National,West
+TEAM8,Golden Eagles,Peoria,IL,American,Central
+TEAM9,Blue Jays,Waterloo,IA,National,East
+TEAM10,Red Hawks,Rockford,IL,American,West
+TEAM11,Silver Knights,Kenosha,WI,National,Central
+TEAM12,Green Dragons,Sioux City,IA,American,East
+TEAM13,White Sox,Champaign,IL,National,West
+TEAM14,Black Bears,La Crosse,WI,American,Central
+TEAM15,Orange Crush,Cedar Rapids,IA,National,East
+TEAM16,Purple Rain,Belleville,IL,American,West
+TEAM17,Golden Lions,Janesville,WI,National,Central
+TEAM18,Silver Stars,Davenport,IA,American,East
+TEAM19,Blue Wave,Elgin,IL,National,West
+TEAM20,Red Storm,Appleton,WI,American,Central
+TEAM21,Green Giants,Quad Cities,IA,National,East
+TEAM22,White Knights,DeKalb,IL,American,West
+TEAM23,Black Knights,Green Bay,WI,National,Central
+TEAM24,Orange Crush,Rock Island,IL,American,East
+TEAM25,Purple Haze,Moline,IL,National,West
+TEAM26,Golden Eagles,Kenosha,WI,American,Central
+TEAM27,Silver Bullets,Dubuque,IA,National,East
+TEAM28,Blue Devils,Peoria,IL,American,West
+TEAM29,Red Devils,Madison,WI,National,Central
+TEAM30,Green Hornets,Des Moines,IA,American,East
+TEAM31,White Tigers,Springfield,IL,National,West
+TEAM32,Black Panthers,Omaha,NE,American,Central
+TEAM33,Orange Crush,St. Louis,MO,National,East
+TEAM34,Purple Reign,Lincoln,NE,American,West
+TEAM35,Golden Dragons,Waterloo,IA,National,Central
+TEAM36,Silver Dragons,Rockford,IL,American,East
+TEAM37,Blue Dragons,Kenosha,WI,National,West
+TEAM38,Red Dragons,Sioux City,IA,American,Central
+TEAM39,Green Dragons,Champaign,IL,National,East
+TEAM40,White Dragons,La Crosse,WI,American,West
+TEAM41,Black Dragons,Cedar Rapids,IA,National,Central
+TEAM42,Orange Dragons,Belleville,IL,American,East
+TEAM43,Purple Dragons,Janesville,WI,National,West
+TEAM44,Golden Dragons,Davenport,IA,American,Central
+TEAM45,Silver Dragons,Elgin,IL,National,East
+TEAM46,Blue Dragons,Appleton,WI,American,West
+TEAM47,Red Dragons,Quad Cities,IA,National,Central
+TEAM48,Green Dragons,DeKalb,IL,American,East
+TEAM49,White Dragons,Green Bay,WI,National,West
+TEAM50,Black Dragons,Rock Island,IL,American,Central 
