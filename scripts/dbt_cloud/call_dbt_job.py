@@ -12,7 +12,6 @@ import os
 import sys
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -50,7 +49,7 @@ Configuration:
 req_auth_header = {"Authorization": f"Token {api_key}"}
 post_headers = {
     "Authorization": f"Token {api_key}",
-    "Content-Type": "application/x-www-form-urlencoded",
+    "Content-Type": "application/json",
 }
 req_job_url = f"{api_base}api/v2/accounts/{account_id}/jobs/{job_id}/run/"
 run_status_map: dict[int, str] = {
@@ -84,11 +83,11 @@ def run_job(
     if schema_ov:
         req_payload["schema_override"] = schema_ov.replace("-", "_")
     if gh_pr_id:
-        req_payload["github_pull_request_id"] = gh_pr_id
+        req_payload["github_pull_request_id"] = int(gh_pr_id)
 
     print(f"Triggering job:\n  url: {url}\n  payload: {req_payload}")
 
-    data = urllib.parse.urlencode(req_payload).encode()
+    data = json.dumps(req_payload).encode("utf-8")
     request = urllib.request.Request(method="POST", data=data, headers=post_headers, url=url)
     try:
         with urllib.request.urlopen(request, timeout=120) as req:
