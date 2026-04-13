@@ -2,8 +2,8 @@ version: 2
 
 sources:
   - name: dugout
-    database: raw
-    schema: trouze
+    database: trouze_raw
+    schema: raw
     config:
       freshness:
         warn_after: {count: 24, period: hour}
