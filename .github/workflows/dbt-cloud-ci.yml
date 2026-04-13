@@ -1,113 +1,66 @@
-# dbt Cloud CI: path filters + matrix (environment × project) → GitHub Environment → dbt Cloud CI jobs.
-#
-# Matrix: strategy.matrix.include lists each (environment × project) row with explicit
-# dbt_project_id and dbt_cloud_job_id (from vars). No conditional env expressions per project.
-# Each job uses environment: ${{ matrix.environment }} so env-scoped vars resolve correctly.
-#
-# PR base branch → environment:
-#   dev           → development
-#   staging       → staging
-#   main → production
-#
-# Per GitHub Environment: variables DBT_JOB_CI_1, DBT_JOB_CI_2 (optional env DBT_API_KEY secret).
-# Repository: DBT_ACCOUNT_ID, DBT_URL (optional), DBT_PROJECT_ID_1, DBT_PROJECT_ID_2, secret DBT_API_KEY.
-#
-# Prior art: https://gist.github.com/trouze/26e578d92cd803514f29f6a33d5fd2cd
-#
-# Edit path filters so project_1 / project_2 match your monorepo layout.
-
 name: dbt Cloud CI (PR)
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-concurrency:
-  group: dbt-cloud-ci-${{ github.repository }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
 permissions:
   contents: read
   pull-requests: write
 
 jobs:
-  changes:
-    name: Detect changed dbt projects
+  detect:
+    name: Detect changes
     runs-on: ubuntu-latest
     outputs:
+      environment: ${{ steps.env.outputs.environment }}
       projects: ${{ steps.filter.outputs.changes }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Resolve environment
+        id: env
+        run: |
+          case "${{ github.base_ref }}" in
+            dev)     echo "environment=development" >> "$GITHUB_OUTPUT" ;;
+            staging) echo "environment=staging"     >> "$GITHUB_OUTPUT" ;;
+            main)    echo "environment=production"  >> "$GITHUB_OUTPUT" ;;
+            *)       echo "environment="            >> "$GITHUB_OUTPUT" ;;
+          esac
+
       - uses: dorny/paths-filter@v3
         id: filter
+        if: steps.env.outputs.environment != ''
         with:
-          filters: |
-            project_1:
-              - 'first_dbt_project/**'
-            project_2:
-              - 'second_dbt_project/**'
+          filters: .github/path-filters.yml
 
-  dbt-cloud-ci:
-    name: dbt Cloud CI — ${{ matrix.environment }} — ${{ matrix.project }}
-    needs: changes
-    if: >
-      needs.changes.result == 'success' &&
-      needs.changes.outputs.projects != '[]' &&
-      contains(fromJSON(needs.changes.outputs.projects), matrix.project) &&
-      (
-        (matrix.environment == 'development' && github.event.pull_request.base.ref == 'dev') ||
-        (matrix.environment == 'staging' && github.event.pull_request.base.ref == 'staging') ||
-        (matrix.environment == 'production' && github.event.pull_request.base.ref == 'main')
-      )
-    runs-on: ubuntu-latest
-    environment: ${{ matrix.environment }}
+  ci:
+    name: CI
+    needs: detect
+    if: needs.detect.outputs.environment != '' && needs.detect.outputs.projects != '[]'
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - environment: development
-            project: project_1
-            dbt_project_id: ${{ vars.DBT_PROJECT_ID_1 }}
-            dbt_cloud_job_id: ${{ vars.DBT_JOB_CI_1 }}
-          - environment: development
-            project: project_2
-            dbt_project_id: ${{ vars.DBT_PROJECT_ID_2 }}
-            dbt_cloud_job_id: ${{ vars.DBT_JOB_CI_2 }}
-          - environment: staging
-            project: project_1
-            dbt_project_id: ${{ vars.DBT_PROJECT_ID_1 }}
-            dbt_cloud_job_id: ${{ vars.DBT_JOB_CI_1 }}
-          - environment: staging
-            project: project_2
-            dbt_project_id: ${{ vars.DBT_PROJECT_ID_2 }}
-            dbt_cloud_job_id: ${{ vars.DBT_JOB_CI_2 }}
-          - environment: production
-            project: project_1
-            dbt_project_id: ${{ vars.DBT_PROJECT_ID_1 }}
-            dbt_cloud_job_id: ${{ vars.DBT_JOB_CI_1 }}
-          - environment: production
-            project: project_2
-            dbt_project_id: ${{ vars.DBT_PROJECT_ID_2 }}
-            dbt_cloud_job_id: ${{ vars.DBT_JOB_CI_2 }}
-    env:
-      DBT_URL: ${{ vars.DBT_URL }}
-      DBT_ACCOUNT_ID: ${{ vars.DBT_ACCOUNT_ID }}
-      DBT_PROJECT_ID: ${{ matrix.dbt_project_id }}
-      DBT_PR_JOB_ID: ${{ matrix.dbt_cloud_job_id }}
-      DBT_API_KEY: ${{ secrets.DBT_API_KEY }}
-      DBT_JOB_CAUSE: "github-actions-ci:${{ matrix.environment }}:pr-${{ github.event.pull_request.number }} (${{ matrix.project }})"
-      DBT_JOB_BRANCH: ${{ github.head_ref }}
-      GH_PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
-      DBT_JOB_SCHEMA_OVERRIDE: dbt_cloud_pr_${{ github.event.pull_request.number }}_${{ matrix.project }}
-      DBT_RUN_TIMEOUT_SECONDS: "7200"
-      DBT_CI_MATRIX_PROJECT: ${{ matrix.project }}
+        project: ${{ fromJSON(needs.detect.outputs.projects) }}
+    uses: ./.github/workflows/_dbt-cloud-run.yml
+    with:
+      project: ${{ matrix.project }}
+      environment: ${{ needs.detect.outputs.environment }}
+      mode: ci
+      branch: ${{ github.head_ref }}
+      pr_number: ${{ github.event.pull_request.number }}
+      pr_sha: ${{ github.event.pull_request.head.sha }}
+    secrets: inherit
+
+  ci-complete:
+    name: dbt Cloud CI
+    needs: [detect, ci]
+    if: always()
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: dbt Cloud job (poll) + sticky PR comment
-        id: dbt
-        run: python scripts/dbt_cloud/call_dbt_job.py
+      - name: Check results
+        run: |
+          if [[ "${{ needs.ci.result }}" == "failure" ]]; then
+            echo "::error::One or more dbt Cloud CI jobs failed"
+            exit 1
+          fi

@@ -1,0 +1,4 @@
+project_1:
+  - 'first_dbt_project/**'
+project_2:
+  - 'second_dbt_project/**'
