@@ -1,0 +1,78 @@
+# dbt Cloud CD: after merge to the default branch, trigger production (or staging) dbt Cloud jobs
+# for projects whose paths changed on that push. Execution stays in dbt Cloud (logs, artifacts, lineage).
+#
+# Pair with branch protection + required status checks from dbt-cloud-ci.yml on PRs.
+#
+# Setup: same secrets/vars as dbt-cloud-ci.yml, plus deploy job IDs:
+#   DBT_JOB_CD_1, DBT_JOB_CD_2 (aligned with project_1 / project_2 path filters).
+
+name: dbt Cloud CD (push)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+concurrency:
+  group: dbt-cloud-cd-${{ github.repository }}-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: Detect changed dbt projects (push)
+    runs-on: ubuntu-latest
+    outputs:
+      projects: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            project_1:
+              - 'first_dbt_project/**'
+            project_2:
+              - 'second_dbt_project/**'
+
+  dbt-cloud-cd:
+    name: dbt Cloud CD — ${{ matrix.project }}
+    needs: changes
+    if: >
+      needs.changes.result == 'success' &&
+      needs.changes.outputs.projects != '[]' &&
+      contains(fromJSON(needs.changes.outputs.projects), matrix.project)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: project_1
+            dbt_project_id: ${{ vars.DBT_PROJECT_ID_1 }}
+            dbt_job_id: ${{ vars.DBT_JOB_CD_1 }}
+          - project: project_2
+            dbt_project_id: ${{ vars.DBT_PROJECT_ID_2 }}
+            dbt_job_id: ${{ vars.DBT_JOB_CD_2 }}
+    env:
+      DBT_URL: ${{ vars.DBT_URL }}
+      DBT_ACCOUNT_ID: ${{ vars.DBT_ACCOUNT_ID }}
+      DBT_PROJECT_ID: ${{ matrix.dbt_project_id }}
+      DBT_PR_JOB_ID: ${{ matrix.dbt_job_id }}
+      DBT_API_KEY: ${{ secrets.DBT_API_KEY }}
+      DBT_JOB_CAUSE: "github-actions-cd:push-${{ github.ref_name }}@${{ github.sha }} (${{ matrix.project }})"
+      DBT_JOB_BRANCH: ${{ github.ref_name }}
+      DBT_RUN_TIMEOUT_SECONDS: "14400"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Trigger dbt Cloud deploy job and wait
+        run: python scripts/dbt_cloud/call_dbt_job.py

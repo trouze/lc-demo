@@ -2,9 +2,9 @@ name: 'dbt_dugout'
 version: '1.0.0'
 config-version: 2
 
-profile: 'sa_snowflake'
+profile: 'sa_databricks'
 dbt-cloud:
-  defer-env-id: 400397
+  defer-env-id: 443619
 
 model-paths: ["models"]
 analysis-paths: ["analyses"]

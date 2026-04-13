@@ -1,0 +1,94 @@
+# dbt Cloud–centric CI: path filters → trigger dbt Cloud jobs (Admin API) → poll → PR comment.
+# Sandbox (github.com): use ubuntu-latest and repository secrets/variables.
+# GitHub Enterprise Server: set runs-on to your self-hosted labels (see scripts/deploy-ghe-actions-runner-aws.sh).
+#
+# Prior art: https://gist.github.com/trouze/26e578d92cd803514f29f6a33d5fd2cd
+#
+# Setup (GitHub → Settings → Secrets and variables → Actions):
+#   Secrets:  DBT_API_KEY
+#   Variables: DBT_ACCOUNT_ID
+#              DBT_PROJECT_ID_1, DBT_JOB_CI_1
+#              DBT_PROJECT_ID_2, DBT_JOB_CI_2
+#   Add more matrix rows + matching path filters / DBT_PROJECT_ID_N / DBT_JOB_CI_N as needed.
+#   Optional: DBT_URL (single-tenant host, e.g. https://YOUR_ACCOUNT.us1.dbt.com)
+#
+# Edit the path filters below so project_1 / project_2 (or additional keys) match your monorepo layout.
+# Matrix project labels must match the filter names from dorny/paths-filter.
+#
+# In dbt Cloud: create one CI job per dbt project with "Defer to production/state" as needed,
+# link the GitHub repo, and copy job + project IDs into the variables above.
+#
+# PR comments use scripts/dbt_cloud/call_dbt_job.py (GitHub REST API). Requires pull-requests: write.
+# Set DBT_CI_MATRIX_PROJECT per job (see env below). Disable comments: GH_PR_COMMENT=false.
+
+name: dbt Cloud CI (PR)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: dbt-cloud-ci-${{ github.repository }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  changes:
+    name: Detect changed dbt projects
+    runs-on: ubuntu-latest
+    outputs:
+      projects: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            project_1:
+              - 'first_dbt_project/**'
+            project_2:
+              - 'second_dbt_project/**'
+
+  dbt-cloud-ci:
+    name: dbt Cloud CI — ${{ matrix.project }}
+    needs: changes
+    if: >
+      needs.changes.result == 'success' &&
+      needs.changes.outputs.projects != '[]' &&
+      contains(fromJSON(needs.changes.outputs.projects), matrix.project)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: project_1
+            dbt_project_id: ${{ vars.DBT_PROJECT_ID_1 }}
+            dbt_job_id: ${{ vars.DBT_JOB_CI_1 }}
+          - project: project_2
+            dbt_project_id: ${{ vars.DBT_PROJECT_ID_2 }}
+            dbt_job_id: ${{ vars.DBT_JOB_CI_2 }}
+    env:
+      DBT_URL: ${{ vars.DBT_URL }}
+      DBT_ACCOUNT_ID: ${{ vars.DBT_ACCOUNT_ID }}
+      DBT_PROJECT_ID: ${{ matrix.dbt_project_id }}
+      DBT_PR_JOB_ID: ${{ matrix.dbt_job_id }}
+      DBT_API_KEY: ${{ secrets.DBT_API_KEY }}
+      DBT_JOB_CAUSE: "github-actions-ci:pr-${{ github.event.pull_request.number }} (${{ matrix.project }})"
+      DBT_JOB_BRANCH: ${{ github.head_ref }}
+      GH_PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
+      DBT_JOB_SCHEMA_OVERRIDE: dbt_cloud_pr_${{ github.event.pull_request.number }}_${{ matrix.project }}
+      DBT_RUN_TIMEOUT_SECONDS: "7200"
+      DBT_CI_MATRIX_PROJECT: ${{ matrix.project }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: dbt Cloud job (poll) + sticky PR comment
+        id: dbt
+        run: python scripts/dbt_cloud/call_dbt_job.py
