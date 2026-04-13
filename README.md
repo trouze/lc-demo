@@ -44,10 +44,9 @@ Edit **`filters:`** in both dbt Cloud workflows if your directories differ.
 
 In the repo: **Settings → Environments** — create **`development`**, **`staging`**, **`production`**.
 
-On **each** environment, add **variables**:
+On **each** environment, add **variable**:
 
-- `DBT_JOB_CI_1`, `DBT_JOB_CI_2` (CI job IDs for that environment)
-- `DBT_JOB_CD_1`, `DBT_JOB_CD_2` (deploy job IDs)
+- `DBT_PROJECTS`
 
 Optionally add **`DBT_API_KEY`** as an **environment secret** on `production` (or all envs) so tokens differ by tier; otherwise use a single **repository** secret (see below).
 
@@ -58,7 +57,6 @@ Configure **protection rules** on `production` (required reviewers, deployment b
 **Settings → Secrets and variables → Actions → Variables** (repository):
 
 - `DBT_ACCOUNT_ID`
-- `DBT_PROJECT_ID_1`, `DBT_PROJECT_ID_2`
 - Optional: `DBT_URL` (single-tenant / regional dbt Cloud host)
 
 **Secrets** (repository): `DBT_API_KEY` if you are not using per-environment API keys.
