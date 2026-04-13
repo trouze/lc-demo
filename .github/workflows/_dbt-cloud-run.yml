@@ -1,0 +1,63 @@
+name: dbt Cloud Run
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+      mode:
+        required: true
+        type: string        # "ci" or "cd"
+      branch:
+        required: true
+        type: string
+      pr_number:
+        type: string
+        default: ""
+      pr_sha:
+        type: string
+        default: ""
+      cause_suffix:
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  pull-requests: write       # needed for CI sticky PR comments; harmless for CD
+
+jobs:
+  run:
+    name: ${{ inputs.mode }} — ${{ inputs.project }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    concurrency:
+      group: dbt-cloud-${{ inputs.mode }}-${{ inputs.environment }}-${{ inputs.project }}
+      cancel-in-progress: ${{ inputs.mode == 'ci' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run dbt Cloud job
+        env:
+          PROJECT_NAME:               ${{ inputs.project }}
+          MODE:                       ${{ inputs.mode }}
+          ENVIRONMENT:                ${{ inputs.environment }}
+          DBT_URL:                    ${{ vars.DBT_URL }}
+          DBT_ACCOUNT_ID:             ${{ vars.DBT_ACCOUNT_ID }}
+          DBT_API_KEY:                ${{ secrets.DBT_API_KEY }}
+          DBT_PROJECTS:               ${{ vars.DBT_PROJECTS }}
+          DBT_JOB_BRANCH:             ${{ inputs.branch }}
+          GH_PULL_REQUEST_ID:         ${{ inputs.pr_number }}
+          DBT_SCHEMA_OVERRIDE_PREFIX: dbt_cloud_pr_${{ inputs.pr_number }}
+          GIT_SHA:                    ${{ inputs.pr_sha }}
+          DBT_JOB_CAUSE_SUFFIX:       ${{ inputs.cause_suffix }}
+          DBT_RUN_TIMEOUT_SECONDS:    ${{ inputs.mode == 'ci' && '7200' || '14400' }}
+          GITHUB_TOKEN:               ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/dbt_cloud/runner.py
