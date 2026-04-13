@@ -1,109 +1,176 @@
 # dbt_dugout
 
-Monorepo example for **multiple dbt projects** wired to **dbt Cloud** with **GitHub Actions** for CI (pull requests) and CD (pushes). Workflows call the dbt Cloud Admin API, wait for runs to finish, and (on CI) post a sticky PR comment with a link to the dbt Cloud run. Execution stays in dbt Cloud—Actions orchestrates only.
+Monorepo template for **multiple dbt projects** wired to **dbt Cloud** via **GitHub Actions** CI/CD. On a pull request, only the projects whose files changed get a CI run. On a push, only changed projects get deployed. Execution stays in dbt Cloud — Actions orchestrates only.
 
 **Branch → environment mapping**
 
-| Branch (PR base / push) | GitHub Environment | Typical use |
-|-------------------------|--------------------|-------------|
-| `dev` | `development` | Pre-prod |
-| `staging` | `staging` | Pre-prod |
-| `main` | `production` | Prod |
+| Branch (PR base / push) | GitHub Environment |
+|-------------------------|--------------------|
+| `dev` | `development` |
+| `staging` | `staging` |
+| `main` | `production` |
 
-CI and CD each use a **strategy matrix**: `environment` × `project`. Every matrix cell runs with `environment: ${{ matrix.environment }}`, so **environment-scoped variables**, **secrets**, and **protection rules** apply per deployment tier. An `if:` on the job matches **PR base branch** (CI) or **push branch** (CD) to the right GitHub Environment so only the relevant cells run.
+## How it works
 
-## Architecture (short)
-
-1. **Path filters** decide which logical project (`project_1`, `project_2`) changed.
-2. **Python** triggers the right **dbt Cloud job** and polls ([`scripts/dbt_cloud/call_dbt_job.py`](scripts/dbt_cloud/call_dbt_job.py)).
-3. **CI**: one matrix job (3 environments × 2 projects); each combination is gated by **PR base branch** + paths.
-4. **CD**: one matrix job; each combination is gated by **push branch** + paths.
-5. **Optional:** self-hosted runners on **GitHub Enterprise Server**—[`scripts/deploy-ghe-actions-runner-aws.sh`](scripts/deploy-ghe-actions-runner-aws.sh).
-
-Prior art: [Github Actions for Triggering dbt CI and Merge Jobs](https://gist.github.com/trouze/26e578d92cd803514f29f6a33d5fd2cd).
+1. A **`detect` job** checks out the repo, resolves the target GitHub Environment from the branch name, and runs `dorny/paths-filter` against `.github/path-filters.yml` to produce a JSON array of changed project keys.
+2. A **matrix job** fans out over that array — one job per changed project — and calls the reusable workflow `.github/workflows/_dbt-cloud-run.yml`.
+3. The **reusable workflow** sets `environment: <env>` so GitHub resolves per-environment variables, then runs `scripts/dbt_cloud/runner.py`.
+4. **`runner.py`** reads the `DBT_PROJECTS` JSON variable, looks up the project's IDs, and calls `run_project()` from `call_dbt_job.py` to trigger and poll the dbt Cloud job.
+5. A **`ci-complete` / `cd-complete` gate job** provides a single stable check name for branch protection rules regardless of how many projects ran.
 
 ## Repository map
 
-| Area | Path | Role |
-|------|------|------|
-| dbt project (example 1) | [`first_dbt_project/`](first_dbt_project/) | `project_1` path filter |
-| dbt project (example 2) | [`second_dbt_project/`](second_dbt_project/) | `project_2` path filter |
-| CI workflow | [`.github/workflows/dbt-cloud-ci.yml`](.github/workflows/dbt-cloud-ci.yml) | PR → environments → dbt Cloud CI jobs → PR comment |
-| CD workflow | [`.github/workflows/dbt-cloud-cd.yml`](.github/workflows/dbt-cloud-cd.yml) | Push `dev` / `staging` / `main` → deploy jobs |
-| dbt Cloud API helper | [`scripts/dbt_cloud/call_dbt_job.py`](scripts/dbt_cloud/call_dbt_job.py) | Trigger job, poll, optional sticky PR comment |
-| Push secrets/vars | [`scripts/gh-sync-dbt-cloud-actions-env.sh`](scripts/gh-sync-dbt-cloud-actions-env.sh) | Repo-level + per-environment via `gh` |
-| Env template | [`scripts/.env.example`](scripts/.env.example) | Copy to `.env` / `.env.development` etc. |
-| GHES runner (optional) | [`scripts/deploy-ghe-actions-runner-aws.sh`](scripts/deploy-ghe-actions-runner-aws.sh) | EC2 + optional dbt Cloud egress rules |
-| CODEOWNERS (optional) | [`.github/workflows/codeowners-check.yml`](.github/workflows/codeowners-check.yml) | Hygiene workflow |
+| Path | Role |
+|------|------|
+| `.github/path-filters.yml` | Maps project keys to file paths — **edit this for your projects** |
+| `.github/workflows/dbt-cloud-ci.yml` | PR trigger: detect → matrix CI → gate |
+| `.github/workflows/dbt-cloud-cd.yml` | Push trigger: detect → matrix CD → gate |
+| `.github/workflows/_dbt-cloud-run.yml` | Reusable workflow (one project, one env) |
+| `scripts/dbt_cloud/runner.py` | Unified single-project runner |
+| `scripts/dbt_cloud/call_dbt_job.py` | dbt Cloud API: trigger, poll, sticky PR comment |
+| `scripts/gh-sync-dbt-cloud-actions-env.sh` | Push secrets/vars to GitHub via `gh` CLI |
+| `scripts/.env.example` | Template for `.env` / `.env.<environment>` files |
 
-Edit **`filters:`** in both dbt Cloud workflows if your directories differ.
+---
 
 ## Setup
 
-### 1. GitHub Environments
+### 1. Replace example projects with your own
 
-In the repo: **Settings → Environments** — create **`development`**, **`staging`**, **`production`**.
+**`.github/path-filters.yml`** maps a short key to the directory paths that belong to each dbt project. Edit this file to match your repo layout:
 
-On **each** environment, add **variables**:
+```yaml
+# .github/path-filters.yml
+analytics:
+  - 'analytics/**'
+finance:
+  - 'finance/**'
+```
 
-- `DBT_JOB_CI_1`, `DBT_JOB_CI_2` (CI job IDs for that environment)
-- `DBT_JOB_CD_1`, `DBT_JOB_CD_2` (deploy job IDs)
+The keys (`analytics`, `finance`) are what you will reference everywhere else. You can have as many projects as you need.
 
-Optionally add **`DBT_API_KEY`** as an **environment secret** on `production` (or all envs) so tokens differ by tier; otherwise use a single **repository** secret (see below).
+### 2. Create GitHub Environments
 
-Configure **protection rules** on `production` (required reviewers, deployment branches) as needed.
+In your repo: **Settings → Environments** — create three environments:
 
-### 2. Repository-level variables and secret
+- `development`
+- `staging`
+- `production`
 
-**Settings → Secrets and variables → Actions → Variables** (repository):
+On `production`, configure protection rules (required reviewers, deployment branch `main`) as needed.
 
-- `DBT_ACCOUNT_ID`
-- `DBT_PROJECT_ID_1`, `DBT_PROJECT_ID_2`
-- Optional: `DBT_URL` (single-tenant / regional dbt Cloud host)
+### 3. Add the `DBT_PROJECTS` variable to each environment
 
-**Secrets** (repository): `DBT_API_KEY` if you are not using per-environment API keys.
+On **each** GitHub Environment, create a variable named **`DBT_PROJECTS`** whose value is a JSON object mapping your project keys to their dbt Cloud IDs:
 
-### 3. dbt Cloud
+```json
+{
+  "analytics": {
+    "project_id": "111",
+    "ci_job_id":  "222",
+    "cd_job_id":  "333"
+  },
+  "finance": {
+    "project_id": "444",
+    "ci_job_id":  "555",
+    "cd_job_id":  "666"
+  }
+}
+```
 
-For each GitHub environment, create matching **dbt Cloud environments** and **jobs** (CI + deploy) per monorepo project; paste job IDs into the GitHub Environment variables above.
+The values will differ per environment (each environment has its own dbt Cloud jobs). Get these IDs from dbt Cloud: **Deploy → Jobs → <job> → Settings** — the job ID is in the URL.
 
-### 4. Sync with `gh`
+### 4. Add repository-level variables and secret
 
-Repository-level:
+**Settings → Secrets and variables → Actions**
+
+Variables (repository-level, shared across environments):
+
+| Name | Value |
+|------|-------|
+| `DBT_ACCOUNT_ID` | Your dbt Cloud account ID (found in dbt Cloud URL: `/accounts/<id>/`) |
+| `DBT_URL` | _(optional)_ Custom dbt Cloud host, e.g. `https://emea.dbt.com` — omit for the default `https://cloud.getdbt.com` |
+
+Secrets (repository-level):
+
+| Name | Value |
+|------|-------|
+| `DBT_API_KEY` | dbt Cloud service token with **Job Admin** permissions |
+
+If you need different API keys per tier, add `DBT_API_KEY` as an **environment secret** on the relevant environments — it overrides the repository secret.
+
+### 5. Sync variables using the helper script
+
+Copy `scripts/.env.example` to `.env` and fill in the shared values:
+
+```bash
+cp scripts/.env.example .env
+# edit .env: set DBT_API_KEY, DBT_ACCOUNT_ID, optionally DBT_URL
+```
+
+Create per-environment files (e.g. `.env.development`) containing the `DBT_PROJECTS` JSON for that environment:
+
+```bash
+# .env.development
+DBT_PROJECTS='{"analytics":{"project_id":"111","ci_job_id":"222","cd_job_id":"333"},"finance":{"project_id":"444","ci_job_id":"555","cd_job_id":"666"}}'
+```
+
+Push everything to GitHub:
 
 ```bash
 chmod +x scripts/gh-sync-dbt-cloud-actions-env.sh
+
+# Repository-level secret + variables
 ENV_FILE=.env ./scripts/gh-sync-dbt-cloud-actions-env.sh owner/repo
+
+# Per-environment variables (repeat for staging and production)
+ENVIRONMENT=development  ENV_FILE=.env.development  ./scripts/gh-sync-dbt-cloud-actions-env.sh owner/repo
+ENVIRONMENT=staging      ENV_FILE=.env.staging      ./scripts/gh-sync-dbt-cloud-actions-env.sh owner/repo
+ENVIRONMENT=production   ENV_FILE=.env.production   ./scripts/gh-sync-dbt-cloud-actions-env.sh owner/repo
 ```
 
-Per GitHub Environment (repeat with different files):
+Use `DRY_RUN=1` to preview what would be set without making changes.
 
-```bash
-ENVIRONMENT=development ENV_FILE=.env.development ./scripts/gh-sync-dbt-cloud-actions-env.sh owner/repo
-ENVIRONMENT=staging ENV_FILE=.env.staging ./scripts/gh-sync-dbt-cloud-actions-env.sh owner/repo
-ENVIRONMENT=production ENV_FILE=.env.production ./scripts/gh-sync-dbt-cloud-actions-env.sh owner/repo
-```
+### 6. Configure branch protection
 
-Use `DRY_RUN=1` to preview. See [`scripts/.env.example`](scripts/.env.example).
+The matrix produces variable check names (`ci — analytics`, `ci — finance`, etc.) that change as projects are added or removed. Use the **gate jobs** as your required status checks instead — they are always present and stable:
 
-### 5. Branch protection
+| Workflow | Gate job name | Use as required check on |
+|----------|---------------|--------------------------|
+| CI | `dbt Cloud CI` | all target branches (`dev`, `staging`, `main`) |
+| CD | `dbt Cloud CD` | _(informational; branch protection is usually CI-only)_ |
 
-Configure **required status checks** per target branch (e.g. require `dbt Cloud CI — production — project_1` on `main`). Skipped jobs do not block merges.
+In **Settings → Branches → Branch protection rules**, add `dbt Cloud CI` as a required status check on each protected branch.
 
-### 6. GitHub Enterprise Server (optional)
+---
 
-Use self-hosted runners and align `runs-on` with your labels. See [`scripts/deploy-ghe-actions-runner-aws.sh`](scripts/deploy-ghe-actions-runner-aws.sh).
+## Adding a new dbt project
 
-### 7. Adding a third dbt project
+Only two changes are needed:
 
-- Add `project_3` to path filters in **both** workflows.
-- Add three new `matrix.include` rows per environment (one per `project_3`), with `dbt_project_id: ${{ vars.DBT_PROJECT_ID_3 }}` and `dbt_cloud_job_id: ${{ vars.DBT_JOB_CI_3 }}` / `DBT_JOB_CD_3` as appropriate.
-- Add `DBT_PROJECT_ID_3` (repository) and per-environment `DBT_JOB_CI_3` / `DBT_JOB_CD_3`; extend [`scripts/gh-sync-dbt-cloud-actions-env.sh`](scripts/gh-sync-dbt-cloud-actions-env.sh) and [`scripts/.env.example`](scripts/.env.example).
+1. **`.github/path-filters.yml`** — add an entry:
+   ```yaml
+   marketing:
+     - 'marketing/**'
+   ```
+
+2. **`DBT_PROJECTS`** on each GitHub Environment — add the new project's IDs to the JSON:
+   ```json
+   {
+     "analytics": { ... },
+     "finance":   { ... },
+     "marketing": { "project_id": "777", "ci_job_id": "888", "cd_job_id": "999" }
+   }
+   ```
+
+No workflow YAML changes. No Python changes.
+
+---
 
 ## CI PR comments
 
-[`scripts/dbt_cloud/call_dbt_job.py`](scripts/dbt_cloud/call_dbt_job.py) updates a sticky comment when `DBT_CI_MATRIX_PROJECT` is set. Set `GH_PR_COMMENT=false` to disable.
+After each CI run, `call_dbt_job.py` upserts a sticky comment on the PR with a link to the dbt Cloud run. The comment is keyed by project so multiple projects each get their own comment block. Set `GH_PR_COMMENT=false` on the workflow step (or as a repo variable) to disable.
 
-## Related files
+## GitHub Enterprise Server (optional)
 
-- [`.gitignore`](.gitignore) — includes `.env`.
+Use self-hosted runners and update `runs-on` in `_dbt-cloud-run.yml` to match your runner labels. See [`scripts/deploy-ghe-actions-runner-aws.sh`](scripts/deploy-ghe-actions-runner-aws.sh) for an EC2-based runner setup.
