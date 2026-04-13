@@ -1,21 +1,27 @@
-# dbt Cloud CD: after merge to the default branch, trigger production (or staging) dbt Cloud jobs
-# for projects whose paths changed on that push. Execution stays in dbt Cloud (logs, artifacts, lineage).
+# dbt Cloud CD: push + matrix (environment × project) → GitHub Environment → dbt Cloud deploy jobs.
 #
-# Pair with branch protection + required status checks from dbt-cloud-ci.yml on PRs.
+# Matrix: strategy.matrix.include lists each (environment × project) row with explicit
+# dbt_project_id and dbt_cloud_job_id (deploy job vars). Each job uses environment: ${{ matrix.environment }}.
 #
-# Setup: same secrets/vars as dbt-cloud-ci.yml, plus deploy job IDs:
-#   DBT_JOB_CD_1, DBT_JOB_CD_2 (aligned with project_1 / project_2 path filters).
+# Push branch → environment:
+#   dev           → development
+#   staging       → staging
+#   main → production
+#
+# Per GitHub Environment: variables DBT_JOB_CD_1, DBT_JOB_CD_2 (optional env DBT_API_KEY secret).
+# Repository: DBT_ACCOUNT_ID, DBT_URL (optional), DBT_PROJECT_ID_1, DBT_PROJECT_ID_2, secret DBT_API_KEY.
 
 name: dbt Cloud CD (push)
 
 on:
   push:
     branches:
+      - dev
+      - staging
       - main
-      - master
 
 concurrency:
-  group: dbt-cloud-cd-${{ github.repository }}-${{ github.sha }}
+  group: dbt-cloud-cd-${{ github.repository }}-${{ github.ref_name }}-${{ github.sha }}
   cancel-in-progress: false
 
 permissions:
@@ -41,30 +47,54 @@ jobs:
               - 'second_dbt_project/**'
 
   dbt-cloud-cd:
-    name: dbt Cloud CD — ${{ matrix.project }}
+    name: dbt Cloud CD — ${{ matrix.environment }} — ${{ matrix.project }}
     needs: changes
     if: >
       needs.changes.result == 'success' &&
       needs.changes.outputs.projects != '[]' &&
-      contains(fromJSON(needs.changes.outputs.projects), matrix.project)
+      contains(fromJSON(needs.changes.outputs.projects), matrix.project) &&
+      (
+        (matrix.environment == 'development' && github.ref_name == 'dev') ||
+        (matrix.environment == 'staging' && github.ref_name == 'staging') ||
+        (matrix.environment == 'production' && github.ref_name == 'main')
+      )
     runs-on: ubuntu-latest
+    environment: ${{ matrix.environment }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - project: project_1
+          - environment: development
+            project: project_1
             dbt_project_id: ${{ vars.DBT_PROJECT_ID_1 }}
-            dbt_job_id: ${{ vars.DBT_JOB_CD_1 }}
-          - project: project_2
+            dbt_cloud_job_id: ${{ vars.DBT_JOB_CD_1 }}
+          - environment: development
+            project: project_2
             dbt_project_id: ${{ vars.DBT_PROJECT_ID_2 }}
-            dbt_job_id: ${{ vars.DBT_JOB_CD_2 }}
+            dbt_cloud_job_id: ${{ vars.DBT_JOB_CD_2 }}
+          - environment: staging
+            project: project_1
+            dbt_project_id: ${{ vars.DBT_PROJECT_ID_1 }}
+            dbt_cloud_job_id: ${{ vars.DBT_JOB_CD_1 }}
+          - environment: staging
+            project: project_2
+            dbt_project_id: ${{ vars.DBT_PROJECT_ID_2 }}
+            dbt_cloud_job_id: ${{ vars.DBT_JOB_CD_2 }}
+          - environment: production
+            project: project_1
+            dbt_project_id: ${{ vars.DBT_PROJECT_ID_1 }}
+            dbt_cloud_job_id: ${{ vars.DBT_JOB_CD_1 }}
+          - environment: production
+            project: project_2
+            dbt_project_id: ${{ vars.DBT_PROJECT_ID_2 }}
+            dbt_cloud_job_id: ${{ vars.DBT_JOB_CD_2 }}
     env:
       DBT_URL: ${{ vars.DBT_URL }}
       DBT_ACCOUNT_ID: ${{ vars.DBT_ACCOUNT_ID }}
       DBT_PROJECT_ID: ${{ matrix.dbt_project_id }}
-      DBT_PR_JOB_ID: ${{ matrix.dbt_job_id }}
+      DBT_PR_JOB_ID: ${{ matrix.dbt_cloud_job_id }}
       DBT_API_KEY: ${{ secrets.DBT_API_KEY }}
-      DBT_JOB_CAUSE: "github-actions-cd:push-${{ github.ref_name }}@${{ github.sha }} (${{ matrix.project }})"
+      DBT_JOB_CAUSE: "github-actions-cd:${{ matrix.environment }}:push-${{ github.ref_name }}@${{ github.sha }} (${{ matrix.project }})"
       DBT_JOB_BRANCH: ${{ github.ref_name }}
       DBT_RUN_TIMEOUT_SECONDS: "14400"
     steps:

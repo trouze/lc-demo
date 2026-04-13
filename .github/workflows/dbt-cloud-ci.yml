@@ -1,25 +1,20 @@
-# dbt Cloud–centric CI: path filters → trigger dbt Cloud jobs (Admin API) → poll → PR comment.
-# Sandbox (github.com): use ubuntu-latest and repository secrets/variables.
-# GitHub Enterprise Server: set runs-on to your self-hosted labels (see scripts/deploy-ghe-actions-runner-aws.sh).
+# dbt Cloud CI: path filters + matrix (environment × project) → GitHub Environment → dbt Cloud CI jobs.
+#
+# Matrix: strategy.matrix.include lists each (environment × project) row with explicit
+# dbt_project_id and dbt_cloud_job_id (from vars). No conditional env expressions per project.
+# Each job uses environment: ${{ matrix.environment }} so env-scoped vars resolve correctly.
+#
+# PR base branch → environment:
+#   dev           → development
+#   staging       → staging
+#   main → production
+#
+# Per GitHub Environment: variables DBT_JOB_CI_1, DBT_JOB_CI_2 (optional env DBT_API_KEY secret).
+# Repository: DBT_ACCOUNT_ID, DBT_URL (optional), DBT_PROJECT_ID_1, DBT_PROJECT_ID_2, secret DBT_API_KEY.
 #
 # Prior art: https://gist.github.com/trouze/26e578d92cd803514f29f6a33d5fd2cd
 #
-# Setup (GitHub → Settings → Secrets and variables → Actions):
-#   Secrets:  DBT_API_KEY
-#   Variables: DBT_ACCOUNT_ID
-#              DBT_PROJECT_ID_1, DBT_JOB_CI_1
-#              DBT_PROJECT_ID_2, DBT_JOB_CI_2
-#   Add more matrix rows + matching path filters / DBT_PROJECT_ID_N / DBT_JOB_CI_N as needed.
-#   Optional: DBT_URL (single-tenant host, e.g. https://YOUR_ACCOUNT.us1.dbt.com)
-#
-# Edit the path filters below so project_1 / project_2 (or additional keys) match your monorepo layout.
-# Matrix project labels must match the filter names from dorny/paths-filter.
-#
-# In dbt Cloud: create one CI job per dbt project with "Defer to production/state" as needed,
-# link the GitHub repo, and copy job + project IDs into the variables above.
-#
-# PR comments use scripts/dbt_cloud/call_dbt_job.py (GitHub REST API). Requires pull-requests: write.
-# Set DBT_CI_MATRIX_PROJECT per job (see env below). Disable comments: GH_PR_COMMENT=false.
+# Edit path filters so project_1 / project_2 match your monorepo layout.
 
 name: dbt Cloud CI (PR)
 
@@ -53,30 +48,54 @@ jobs:
               - 'second_dbt_project/**'
 
   dbt-cloud-ci:
-    name: dbt Cloud CI — ${{ matrix.project }}
+    name: dbt Cloud CI — ${{ matrix.environment }} — ${{ matrix.project }}
     needs: changes
     if: >
       needs.changes.result == 'success' &&
       needs.changes.outputs.projects != '[]' &&
-      contains(fromJSON(needs.changes.outputs.projects), matrix.project)
+      contains(fromJSON(needs.changes.outputs.projects), matrix.project) &&
+      (
+        (matrix.environment == 'development' && github.event.pull_request.base.ref == 'dev') ||
+        (matrix.environment == 'staging' && github.event.pull_request.base.ref == 'staging') ||
+        (matrix.environment == 'production' && github.event.pull_request.base.ref == 'main')
+      )
     runs-on: ubuntu-latest
+    environment: ${{ matrix.environment }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - project: project_1
+          - environment: development
+            project: project_1
             dbt_project_id: ${{ vars.DBT_PROJECT_ID_1 }}
-            dbt_job_id: ${{ vars.DBT_JOB_CI_1 }}
-          - project: project_2
+            dbt_cloud_job_id: ${{ vars.DBT_JOB_CI_1 }}
+          - environment: development
+            project: project_2
             dbt_project_id: ${{ vars.DBT_PROJECT_ID_2 }}
-            dbt_job_id: ${{ vars.DBT_JOB_CI_2 }}
+            dbt_cloud_job_id: ${{ vars.DBT_JOB_CI_2 }}
+          - environment: staging
+            project: project_1
+            dbt_project_id: ${{ vars.DBT_PROJECT_ID_1 }}
+            dbt_cloud_job_id: ${{ vars.DBT_JOB_CI_1 }}
+          - environment: staging
+            project: project_2
+            dbt_project_id: ${{ vars.DBT_PROJECT_ID_2 }}
+            dbt_cloud_job_id: ${{ vars.DBT_JOB_CI_2 }}
+          - environment: production
+            project: project_1
+            dbt_project_id: ${{ vars.DBT_PROJECT_ID_1 }}
+            dbt_cloud_job_id: ${{ vars.DBT_JOB_CI_1 }}
+          - environment: production
+            project: project_2
+            dbt_project_id: ${{ vars.DBT_PROJECT_ID_2 }}
+            dbt_cloud_job_id: ${{ vars.DBT_JOB_CI_2 }}
     env:
       DBT_URL: ${{ vars.DBT_URL }}
       DBT_ACCOUNT_ID: ${{ vars.DBT_ACCOUNT_ID }}
       DBT_PROJECT_ID: ${{ matrix.dbt_project_id }}
-      DBT_PR_JOB_ID: ${{ matrix.dbt_job_id }}
+      DBT_PR_JOB_ID: ${{ matrix.dbt_cloud_job_id }}
       DBT_API_KEY: ${{ secrets.DBT_API_KEY }}
-      DBT_JOB_CAUSE: "github-actions-ci:pr-${{ github.event.pull_request.number }} (${{ matrix.project }})"
+      DBT_JOB_CAUSE: "github-actions-ci:${{ matrix.environment }}:pr-${{ github.event.pull_request.number }} (${{ matrix.project }})"
       DBT_JOB_BRANCH: ${{ github.head_ref }}
       GH_PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
       DBT_JOB_SCHEMA_OVERRIDE: dbt_cloud_pr_${{ github.event.pull_request.number }}_${{ matrix.project }}
