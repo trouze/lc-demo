@@ -28,7 +28,7 @@ final as (
             else false
         end as is_pitcher,
         -- Date column required for MetricFlow time dimension
-        date_from_parts(s.year::int, 1, 1) as season_date
+        make_date(cast(s.year as int), 1, 1) as season_date
     from salaries s
     left join players p
         on s.player_id = p.player_id

@@ -91,7 +91,7 @@ final as (
             else null
         end as cost_per_win,
         -- Date column required for MetricFlow time dimension
-        date_from_parts(pss.year::int, 1, 1) as season_date
+        make_date(cast(pss.year as int), 1, 1) as season_date
     from player_season_stats pss
     left join players p
         on pss.player_id = p.player_id
