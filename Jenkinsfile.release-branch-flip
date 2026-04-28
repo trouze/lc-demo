@@ -1,0 +1,68 @@
+// Declarative pipeline: flip pre-prod and prod dbt Cloud environments to the active release/* branch.
+// Configure as a multibranch pipeline matching release/** so BRANCH_NAME resolves automatically.
+// Jenkins credentials — create one set per scope:
+//   dbt-projects-pre-prod  (Secret Text, JSON matching pre-prod DBT_PROJECTS schema)
+//   dbt-projects-prod      (Secret Text, JSON matching prod DBT_PROJECTS schema)
+//   dbt-cloud-api-key      (Secret Text)
+//   dbt-cloud-account-id   (Secret Text)
+//
+// Jenkins has no native equivalent of GitHub Environment protection rules.
+// The manual `input` gate below is the explicit equivalent for the prod stage.
+
+pipeline {
+    agent any
+
+    environment {
+        DBT_API_KEY    = credentials('dbt-cloud-api-key')
+        DBT_ACCOUNT_ID = credentials('dbt-cloud-account-id')
+        DBT_URL        = "${env.DBT_URL ?: 'https://cloud.getdbt.com/'}"
+        RELEASE_BRANCH = "${env.BRANCH_NAME}"
+    }
+
+    stages {
+        stage('Flip pre-prod') {
+            environment {
+                DBT_PROJECTS = credentials('dbt-projects-pre-prod')
+            }
+            steps {
+                script {
+                    ['first_dbt_project', 'second_dbt_project'].each { project ->
+                        sh """
+                            PROJECT_NAME=${project} \\
+                            python scripts/dbt_cloud/update_env_branch.py
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Approve prod flip') {
+            steps {
+                input message: "Flip prod environments to ${env.RELEASE_BRANCH}?",
+                      ok: 'Flip prod'
+            }
+        }
+
+        stage('Flip prod') {
+            environment {
+                DBT_PROJECTS = credentials('dbt-projects-prod')
+            }
+            steps {
+                script {
+                    ['first_dbt_project', 'second_dbt_project'].each { project ->
+                        sh """
+                            PROJECT_NAME=${project} \\
+                            python scripts/dbt_cloud/update_env_branch.py
+                        """
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo 'Release branch flip failed — check the dbt Cloud API response above.'
+        }
+    }
+}

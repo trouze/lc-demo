@@ -1,0 +1,94 @@
+name: Release Branch Flip
+
+# Authored in the main repo; pulled to the fork so the fork can run it against release/* branches.
+# The fork must replicate the `pre-prod` and `prod` GitHub Environments with their own DBT_PROJECTS
+# variables pointing at the Release dbt Cloud project for each monorepo folder.
+#
+# Pre-prod flips automatically whenever a release/* branch is pushed.
+# Prod flips only on manual workflow_dispatch — run after validating in pre-prod.
+#
+# Fork workflow:
+#   1. Sync fork with upstream (git fetch upstream && git merge upstream/main)
+#   2. Cut release/<n> branch in the fork
+#   3. Push → pre-prod flips automatically
+#   4. Validate in pre-prod for ~1 week
+#   5. Trigger this workflow manually (Actions UI) and select environment=prod
+
+on:
+  push:
+    branches: ['release/**']
+  workflow_dispatch:
+    inputs:
+      release_branch:
+        description: 'Release branch to flip to (e.g. release/1)'
+        required: true
+        type: string
+      environment:
+        description: 'Environment to flip'
+        required: true
+        type: choice
+        options: [pre-prod, prod]
+
+permissions:
+  contents: read
+
+jobs:
+  flip-pre-prod:
+    name: Flip pre-prod — ${{ matrix.project }}
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.environment == 'pre-prod')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [first_dbt_project, second_dbt_project]
+    environment: pre-prod
+    concurrency:
+      group: dbt-cloud-flip-pre-prod-${{ matrix.project }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Flip pre-prod environment branch
+        env:
+          PROJECT_NAME:   ${{ matrix.project }}
+          RELEASE_BRANCH: ${{ github.event_name == 'workflow_dispatch' && inputs.release_branch || github.ref_name }}
+          DBT_URL:        ${{ vars.DBT_URL }}
+          DBT_ACCOUNT_ID: ${{ vars.DBT_ACCOUNT_ID }}
+          DBT_API_KEY:    ${{ secrets.DBT_API_KEY }}
+          DBT_PROJECTS:   ${{ vars.DBT_PROJECTS }}
+        run: python scripts/dbt_cloud/update_env_branch.py
+
+  flip-prod:
+    name: Flip prod — ${{ matrix.project }}
+    if: github.event_name == 'workflow_dispatch' && inputs.environment == 'prod'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [first_dbt_project, second_dbt_project]
+    environment: prod
+    concurrency:
+      group: dbt-cloud-flip-prod-${{ matrix.project }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Flip prod environment branch
+        env:
+          PROJECT_NAME:   ${{ matrix.project }}
+          RELEASE_BRANCH: ${{ inputs.release_branch }}
+          DBT_URL:        ${{ vars.DBT_URL }}
+          DBT_ACCOUNT_ID: ${{ vars.DBT_ACCOUNT_ID }}
+          DBT_API_KEY:    ${{ secrets.DBT_API_KEY }}
+          DBT_PROJECTS:   ${{ vars.DBT_PROJECTS }}
+        run: python scripts/dbt_cloud/update_env_branch.py

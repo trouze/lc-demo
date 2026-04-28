@@ -1,0 +1,72 @@
+name: Merge to Staging
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  detect:
+    name: Detect changed projects
+    runs-on: ubuntu-latest
+    outputs:
+      projects: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: .github/path-filters.yml
+
+  deploy:
+    name: Deploy — ${{ matrix.project }}
+    needs: detect
+    if: needs.detect.outputs.projects != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJSON(needs.detect.outputs.projects) }}
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: dbt-cloud-staging-${{ matrix.project }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Trigger dbt Cloud staging job
+        env:
+          PROJECT_NAME:            ${{ matrix.project }}
+          MODE:                    deploy
+          SCOPE:                   trunk
+          ENVIRONMENT:             staging
+          DBT_URL:                 ${{ vars.DBT_URL }}
+          DBT_ACCOUNT_ID:          ${{ vars.DBT_ACCOUNT_ID }}
+          DBT_API_KEY:             ${{ secrets.DBT_API_KEY }}
+          DBT_PROJECTS:            ${{ vars.DBT_PROJECTS }}
+          DBT_JOB_BRANCH:          develop
+          DBT_RUN_TIMEOUT_SECONDS: "14400"
+        run: python scripts/dbt_cloud/runner.py
+
+  staging-complete:
+    name: dbt Cloud Staging
+    needs: [detect, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          if [[ "${{ needs.deploy.result }}" == "failure" ]]; then
+            echo "::error::One or more dbt Cloud staging jobs failed"
+            exit 1
+          fi
