@@ -1,0 +1,54 @@
+// Declarative pipeline: trigger dbt Cloud staging jobs when feature/* merges into develop.
+// Trigger is configured at the pipeline/multibranch job level (webhook on develop).
+// Jenkins credentials mirror GitHub Environment variables — create one credential set per scope:
+//   dbt-projects-staging  (Secret Text, JSON matching staging DBT_PROJECTS schema)
+//   dbt-cloud-api-key     (Secret Text)
+//   dbt-cloud-account-id  (Secret Text)
+
+pipeline {
+    agent any
+
+    options {
+        disableConcurrentBuilds()   // staging deploys serialize; mirrors GHA cancel-in-progress: false
+    }
+
+    environment {
+        DBT_API_KEY    = credentials('dbt-cloud-api-key')
+        DBT_ACCOUNT_ID = credentials('dbt-cloud-account-id')
+        DBT_URL        = "${env.DBT_URL ?: 'https://cloud.getdbt.com/'}"
+        DBT_PROJECTS   = credentials('dbt-projects-staging')
+    }
+
+    stages {
+        stage('Trigger dbt Cloud staging jobs') {
+            matrix {
+                axes {
+                    axis {
+                        name   'PROJECT_NAME'
+                        values 'first_dbt_project', 'second_dbt_project'
+                    }
+                }
+                when {
+                    changeset "${PROJECT_NAME}/**"
+                }
+                stages {
+                    stage('Deploy') {
+                        steps {
+                            sh """
+                                MODE=deploy SCOPE=trunk ENVIRONMENT=staging \\
+                                DBT_JOB_BRANCH=develop \\
+                                uv run python scripts/dbt_cloud/runner.py
+                            """
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            echo 'One or more dbt Cloud staging jobs failed.'
+        }
+    }
+}

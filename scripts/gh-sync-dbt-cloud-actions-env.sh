@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 #
 # Load GitHub Actions secrets and variables from a .env file using gh.
-# Works with dbt-cloud-ci.yml / dbt-cloud-cd.yml + GitHub Environments.
+# Works with merge-to-staging.yml / release-branch-flip.yml + GitHub Environments.
 #
 # Prerequisites:
 #   - gh CLI authenticated (gh auth login)
-#   - Environments created in the repo: development, staging, production
+#   - Environments created in the repo: staging, pre-prod, prod
 #
 # Usage — repository-level (shared across environments):
 #   ENV_FILE=.env ./scripts/gh-sync-dbt-cloud-actions-env.sh owner/repo
 #
 # Usage — variables scoped to one GitHub Environment (repeat per env with different files):
-#   ENVIRONMENT=development ENV_FILE=.env.development ./scripts/gh-sync-dbt-cloud-actions-env.sh owner/repo
-#   ENVIRONMENT=staging ENV_FILE=.env.staging ./scripts/gh-sync-dbt-cloud-actions-env.sh owner/repo
-#   ENVIRONMENT=production ENV_FILE=.env.production ./scripts/gh-sync-dbt-cloud-actions-env.sh owner/repo
+#   ENVIRONMENT=staging  ENV_FILE=.env.staging  ./scripts/gh-sync-dbt-cloud-actions-env.sh owner/repo
+#   ENVIRONMENT=pre-prod ENV_FILE=.env.pre-prod ./scripts/gh-sync-dbt-cloud-actions-env.sh owner/repo
+#   ENVIRONMENT=prod     ENV_FILE=.env.prod     ./scripts/gh-sync-dbt-cloud-actions-env.sh owner/repo
 #
 # Only non-empty keys after sourcing are sent. DRY_RUN=1 for a preview.
 #
@@ -27,17 +27,19 @@ Usage:
 Environment (shell):
   ENV_FILE          Dotenv path (default: .env)
   GH_REPO           Default repo if <owner/repo> omitted
-  ENVIRONMENT       If set (e.g. development), sync job IDs to that GitHub Environment only
+  ENVIRONMENT       If set (e.g. staging), sync DBT_PROJECTS to that GitHub Environment only
   DRY_RUN           If 1, print actions only (secrets redacted)
 
 Repository-level (ENVIRONMENT unset):
   Secret:    DBT_API_KEY
   Variables: DBT_ACCOUNT_ID, DBT_URL
 
-Per GitHub Environment (ENVIRONMENT=development|staging|production):
-  Variable: DBT_PROJECTS — JSON with project_id, ci_job_id, cd_job_id per project
-            e.g. {"project_1":{"project_id":"123","ci_job_id":"456","cd_job_id":"789"}}
-  Optional secret: DBT_API_KEY (overrides repo secret for jobs using that environment)
+Per GitHub Environment (ENVIRONMENT=staging|pre-prod|prod):
+  Variable: DBT_PROJECTS — JSON shape differs by environment:
+    staging:  {"first_dbt_project":{"project_id":"...","staging_merge_job_id":"..."}, ...}
+    pre-prod: {"first_dbt_project":{"project_id":"...","environment_id":"..."}, ...}
+    prod:     {"first_dbt_project":{"project_id":"...","environment_id":"..."}, ...}
+  Optional secret: DBT_API_KEY (overrides repo secret for that environment)
 USAGE
 }
 
@@ -146,5 +148,8 @@ else
   set_var DBT_URL
   echo ""
   echo "Done. Verify: gh secret list -R ${REPO} && gh variable list -R ${REPO}"
-  echo "Then push per-environment config: ENVIRONMENT=development ENV_FILE=.env.development $0 ${REPO}"
+  echo "Then push per-environment config:"
+  echo "  ENVIRONMENT=staging  ENV_FILE=.env.staging  $0 ${REPO}"
+  echo "  ENVIRONMENT=pre-prod ENV_FILE=.env.pre-prod $0 ${REPO}"
+  echo "  ENVIRONMENT=prod     ENV_FILE=.env.prod     $0 ${REPO}"
 fi
